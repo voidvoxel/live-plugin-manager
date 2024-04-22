@@ -102,6 +102,12 @@ export class PluginManager {
 	 * @param version version of the package, default to "latest"
 	 */
 	async installFromNpm(name: string, version = NPM_LATEST_TAG): Promise<IPluginInfo> {
+		// If a specific version was specified, prefix the version with '^' to
+		// automatically install the latest compatible version.
+		if (version[0] >= '0' && version[0] <= '9') {
+			version = '^' + version;
+		}
+
 		await fs.ensureDir(this.options.pluginsPath);
 
 		await this.syncLock();
