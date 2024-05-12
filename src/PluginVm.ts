@@ -6,6 +6,11 @@ import {PluginManager} from "./PluginManager";
 import {IPluginInfo} from "./PluginInfo";
 import Debug from "debug";
 import { PluginSandbox } from "../index";
+import { getAbsolutePath } from "pathify";
+import { tmpdir } from "os";
+import hashString from "./hashString";
+import { transformFileSync, transformSync } from "@babel/core";
+import { cpSync } from "fs";
 const debug = Debug("live-plugin-manager.PluginVm");
 
 const SCOPED_REGEX = /^(@[a-zA-Z0-9-_]+\/[a-zA-Z0-9-_]+)(.*)/;
@@ -43,6 +48,31 @@ export class PluginVm {
 		const filePathExtension = path.extname(filePath).toLowerCase();
 		if (filePathExtension === ".js" || filePathExtension === ".cjs") {
 			const code = fs.readFileSync(filePath, "utf8");
+			// note: I first put the object (before executing the script) in cache to support circular require
+			this.setCache(pluginContext, filePath, moduleInstance);
+
+			try {
+				this.vmRunScriptInSandbox(sandbox, filePath, code);
+			} catch (e) {
+				// in case of error remove the cache
+				this.removeCache(pluginContext, filePath);
+				throw e;
+			}
+		} else if (filePathExtension === ".mjs" || filePathExtension === ".ts") {
+			let code = fs.readFileSync(filePath, "utf8");
+
+			// Convert from ES6 imports to CommonJS requires
+			const transformResult = transformSync(
+				code,
+				{
+					plugins: [ "@babel/plugin-transform-modules-commonjs" ]
+				}
+			);
+
+			if (transformResult) {
+				code = transformResult.code ?? code;
+			}
+
 			// note: I first put the object (before executing the script) in cache to support circular require
 			this.setCache(pluginContext, filePath, moduleInstance);
 
